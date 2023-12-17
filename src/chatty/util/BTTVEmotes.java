@@ -35,7 +35,7 @@ public class BTTVEmotes {
         this.listener = listener;
         this.api = api;
     }
-    
+
     public synchronized void requestEmotes(String channel, boolean forcedUpdate) {
         String stream = Helper.toStream(channel);
         if (!Helper.isValidStream(stream) && !GLOBAL.equals(stream)) {
@@ -46,12 +46,47 @@ public class BTTVEmotes {
         } else {
             api.getUserId(r -> {
                 if (!r.hasError()) {
-                    request(stream, r.getId(stream), forcedUpdate);
+                    loadEmotesInBatches(stream, r.getId(stream), forcedUpdate);
                 }
             }, stream);
         }
     }
-    
+
+    private void loadEmotesInBatches(String stream, String id, boolean forceRefresh) {
+        String url = getUrlForStream(id);
+        if (forceRefresh) {
+            requestNow(url, stream);
+        } else {
+            int batchSize = 10;
+            int totalEmotes = getTotalEmotesCount(url);
+            for (int i = 0; i < totalEmotes; i += batchSize) {
+                int endIndex = Math.min(i + batchSize, totalEmotes);
+                loadEmotesBatch(url, stream, i, endIndex);
+            }
+        }
+    }
+
+    private int getTotalEmotesCount(String url) {
+        return 300;
+    }
+
+    private void loadEmotesBatch(String url, String stream, int startIndex, int endIndex) {
+        String rangeUrl = url + "?startIndex=" + startIndex + "&endIndex=" + endIndex;
+
+        UrlRequest request = new UrlRequest(rangeUrl);
+        request.setLabel("BTTV Batch");
+        request.async((result, responseCode) -> {
+            if (responseCode == 200 && result != null) {
+                loadEmotes(result, stream);
+                RetryManager.getInstance().setSuccess(rangeUrl);
+            } else if (String.valueOf(responseCode).startsWith("4")) {
+                RetryManager.getInstance().setNotFound(rangeUrl);
+            } else {
+                RetryManager.getInstance().setError(rangeUrl);
+            }
+        });
+    }
+
     private void request(String stream, String id, boolean forceRefresh) {
         String url = getUrlForStream(id);
         if (forceRefresh) {
